@@ -11,10 +11,6 @@ import base64
 from PIL import Image
 import json
 
-# 🔧 Initialize session state
-if "video_uploaded" not in st.session_state:
-    st.session_state["video_uploaded"] = False
-
 # Settings
 SEQUENCE_LENGTH = 32
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,6 +54,7 @@ def extract_frames(video_path, seq_len=SEQUENCE_LENGTH):
         if not ret:
             continue
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.resize(frame, (224, 224))  # Added optimization
         frame = transforms.ToTensor()(frame)
         frame = transform(frame)
         frames.append(frame)
@@ -89,28 +86,29 @@ input_type = st.radio("Choose input type:", ["Webcam (Live)", "Upload Video"])
 
 if input_type == "Upload Video":
     uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi"])
-    
-    # 🔧 Check for file size and early error
+
     if uploaded_file:
         size_mb = len(uploaded_file.getbuffer()) / (1024 * 1024)
-        if size_mb > 190:
-            st.error("File too large! Please upload a video under 190MB.")
+        if size_mb > 200:
+            st.error("❌ File too large. Please upload a video smaller than 200MB.")
         else:
-            st.session_state["video_uploaded"] = True
-            tfile = tempfile.NamedTemporaryFile(delete=False)
-            tfile.write(uploaded_file.read())
-            video_tensor = extract_frames(tfile.name)
+            st.success("✅ Video uploaded successfully. Click below to analyze.")
+            if st.button("Analyze Video"):
+                tfile = tempfile.NamedTemporaryFile(delete=False)
+                tfile.write(uploaded_file.read())
+                with st.spinner("Extracting frames..."):
+                    video_tensor = extract_frames(tfile.name)
 
-            if video_tensor is not None:
-                with st.spinner("Analyzing video..."):
-                    with torch.no_grad():
-                        output = model(video_tensor.to(DEVICE))
-                        pred = torch.argmax(output, dim=1).item()
-                        st.success(f"Prediction: {LABELS[pred]}")
+                if video_tensor is not None:
+                    with st.spinner("Analyzing video..."):
+                        with torch.no_grad():
+                            output = model(video_tensor.to(DEVICE))
+                            pred = torch.argmax(output, dim=1).item()
+                            st.success(f"Prediction: {LABELS[pred]}")
 
-                    if pred == 1:
-                        st.markdown("<h3 style='color:red'>⚠️ Suspicious Activity Detected!</h3>", unsafe_allow_html=True)
-                        play_alarm("alarm.mp3")
+                        if pred == 1:
+                            st.markdown("<h3 style='color:red'>⚠️ Suspicious Activity Detected!</h3>", unsafe_allow_html=True)
+                            play_alarm("alarm.mp3")
 
 else:
     st.subheader("Live Webcam Feed")
@@ -125,6 +123,7 @@ else:
             if not ret:
                 break
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame_rgb = cv2.resize(frame_rgb, (224, 224))  # Resize added
             frame_placeholder.image(frame_rgb, channels="RGB")
             frame_tensor = transforms.ToTensor()(frame_rgb)
             frame_tensor = transform(frame_tensor)
@@ -146,11 +145,5 @@ else:
                 if pred == 1:
                     st.markdown("<h3 style='color:red'>⚠️ Suspicious Activity Detected!</h3>", unsafe_allow_html=True)
                     play_alarm("alarm.mp3")
-
-# 🔁 Optional: Reset button
-if st.button("🔄 Reset App"):
-    for k in st.session_state.keys():
-        del st.session_state[k]
-    st.experimental_rerun()
 
 st.caption("Built with CNN + LSTM | PyTorch + Streamlit")
