@@ -5,7 +5,6 @@ import cv2
 import torch
 import numpy as np
 from model import CNN_LSTM
-from dataset import VideoDataset
 import torchvision.transforms as transforms
 import time
 import base64
