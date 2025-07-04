@@ -40,6 +40,7 @@ transform = transforms.Compose([
 # Function to extract 32 frames evenly
 def extract_frames(video_path, seq_len=SEQUENCE_LENGTH):
     cap = cv2.VideoCapture(video_path)
+
     if not cap.isOpened():
         st.error("⚠️ Failed to open video file. Please upload a valid .mp4 or .avi.")
         return None
@@ -90,19 +91,31 @@ st.title("🎥 Smart CCTV Suspicious Activity Detector")
 
 input_type = st.radio("Choose input type:", ["Webcam (Live)", "Upload Video"])
 
+# Track upload state
+if "video_uploaded" not in st.session_state:
+    st.session_state.video_uploaded = False
+
 if input_type == "Upload Video":
-    uploaded_file = st.file_uploader("Upload a video file (max 25MB)", type=["mp4", "avi"])
-    if uploaded_file:
+    uploaded_file = st.file_uploader("Upload a video file (max 25MB)", type=["mp4", "avi"], key="video_uploader")
+
+    if uploaded_file and not st.session_state.video_uploaded:
+        st.session_state.video_uploaded = True
+
         st.info(f"Received file: {uploaded_file.name}, Size: {uploaded_file.size / (1024 * 1024):.2f} MB")
-        
+
         if uploaded_file.size > 25 * 1024 * 1024:
             st.warning("⚠️ Videos over 25MB may fail on Streamlit Cloud. Please upload a smaller video.")
 
-        # Write to a safe temp path
+        # Write to temp file
         temp_dir = tempfile.mkdtemp()
         temp_path = os.path.join(temp_dir, uploaded_file.name)
-        with open(temp_path, "wb") as out_file:
-            shutil.copyfileobj(uploaded_file, out_file)
+
+        try:
+            with open(temp_path, "wb") as out_file:
+                shutil.copyfileobj(uploaded_file, out_file)
+        except Exception as e:
+            st.error(f"❌ Error saving file: {e}")
+            st.stop()
 
         video_tensor = extract_frames(temp_path)
 
@@ -116,6 +129,9 @@ if input_type == "Upload Video":
                 if pred == 1:
                     st.markdown("<h3 style='color:red'>⚠️ Suspicious Activity Detected!</h3>", unsafe_allow_html=True)
                     play_alarm("alarm.mp3")
+
+        # Reset uploader for next file
+        st.button("Upload Another Video", on_click=lambda: st.session_state.update({"video_uploaded": False}))
 
 else:
     st.subheader("Live Webcam Feed")
